@@ -80,7 +80,7 @@ const formatTime = (seconds: number) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-const navItems = ['Home', 'Search']
+const navItems = ['Home']
 
 function App() {
   const [songs, setSongs] = useState<Song[]>(FALLBACK_SONGS)
@@ -93,6 +93,7 @@ function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const autoplayRef = useRef(false)
   const [duration, setDuration] = useState(0)
+  const [waveOffset, setWaveOffset] = useState(0)
 
   const currentSongAccent = selectedSong.accent || '#1db954'
 
@@ -292,6 +293,48 @@ function App() {
     }
     void audio.play()
   }, [isPlaying])
+
+  useEffect(() => {
+    if (!isPlaying) return
+    const interval = setInterval(() => {
+      setWaveOffset((prev) => prev + 0.1)
+    }, 50)
+    return () => clearInterval(interval)
+  }, [isPlaying])
+
+  const generateWavePath = (width: number, height: number, progressRatio: number) => {
+    const centerY = height / 2
+    const progressX = width * progressRatio
+    const waveLength = 24 // Consistent wave length for smooth, symmetric pattern
+    const amplitude = 7 // Consistent amplitude
+    const frequency = (2 * Math.PI) / waveLength
+    
+    // Generate smooth wavy path for filled portion with many points for smooth curves
+    const filledPath: string[] = []
+    const filledPoints = Math.max(40, Math.ceil((progressX / width) * 120))
+    
+    for (let i = 0; i <= filledPoints; i++) {
+      const x = (i / filledPoints) * progressX
+      const y = centerY + Math.sin(x * frequency + waveOffset) * amplitude
+      if (i === 0) {
+        filledPath.push(`M ${x},${y}`)
+      } else {
+        filledPath.push(`L ${x},${y}`)
+      }
+    }
+    
+    // Generate straight path for unfilled portion
+    const unfilledPath: string[] = []
+    if (progressX < width) {
+      unfilledPath.push(`M ${progressX},${centerY} L ${width},${centerY}`)
+    }
+    
+    return {
+      filled: filledPath.join(' '),
+      unfilled: unfilledPath.join(' '),
+      progressX
+    }
+  }
 
   const togglePlay = () => {
     const audio = audioRef.current
@@ -513,62 +556,87 @@ function App() {
       </main>
 
       <div className="bottom-player">
-        <div className="player-info">
-          <div className="player-cover" style={{ background: coverGradient }}>
-            {selectedSong.cover ? (
-              <img src={selectedSong.cover} alt={`${selectedSong.title} cover art`} />
-            ) : (
-              '♪'
-            )}
+        <div className="player-top-row">
+          <div className="player-info">
+            <div className="player-meta">
+              <span className="player-title">{selectedSong.title}</span>
+              <span className="player-artist">{selectedSong.artist}</span>
+            </div>
           </div>
-          <div className="player-meta">
-            <span className="player-title">{selectedSong.title}</span>
-            <span className="player-artist">{selectedSong.artist}</span>
+          <button type="button" className="player-play-button" onClick={togglePlay}>
+            {isPlaying ? '⏸' : '▶'}
+          </button>
+        </div>
+
+        <div className="player-bottom-row">
+          <button type="button" className="player-nav-button" onClick={() => handleSkip('prev')}>
+            ⏮
+          </button>
+          <div className="wavy-progress-container">
+            <svg
+              className="wavy-progress"
+              viewBox="0 0 480 40"
+              preserveAspectRatio="none"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const x = e.clientX - rect.left
+                const percentage = x / rect.width
+                const newTime = percentage * (duration || 0)
+                handleSeek(newTime)
+              }}
+            >
+              {(() => {
+                const waveData = generateWavePath(480, 40, progress / (duration || 1))
+                return (
+                  <>
+                    {/* Filled wavy portion */}
+                    <path
+                      className="wavy-path-filled"
+                      d={waveData.filled}
+                      fill="none"
+                      stroke={currentSongAccent}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    />
+                    {/* Unfilled straight portion */}
+                    {waveData.unfilled && (
+                      <path
+                        className="wavy-path-unfilled"
+                        d={waveData.unfilled}
+                        fill="none"
+                        stroke="rgba(255, 255, 255, 0.3)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    )}
+                    {/* Scrubber circle */}
+                    <circle
+                      cx={waveData.progressX}
+                      cy="20"
+                      r="6"
+                      fill="#fff"
+                      className="wavy-scrubber"
+                    />
+                  </>
+                )
+              })()}
+            </svg>
           </div>
+          <button type="button" className="player-nav-button" onClick={() => handleSkip('next')}>
+            ⏭
+          </button>
+          <button type="button" className="player-control-button" disabled>
+            🔀
+          </button>
           <button
             type="button"
-            className={isSongLiked(selectedSong.id) ? 'player-like liked' : 'player-like'}
+            className={isSongLiked(selectedSong.id) ? 'player-like-button liked' : 'player-like-button'}
             onClick={() => handleToggleLike(selectedSong.id)}
             aria-label={isSongLiked(selectedSong.id) ? 'Unlike song' : 'Like song'}
           >
             {isSongLiked(selectedSong.id) ? '♥' : '♡'}
           </button>
         </div>
-
-        <div className="player-center">
-          <div className="player-buttons">
-            <button type="button" className="ghost" onClick={() => handleSkip('prev')}>
-              ⏮
-            </button>
-            <button type="button" className="primary" onClick={togglePlay}>
-              {isPlaying ? '⏸' : '▶'}
-            </button>
-            <button type="button" className="ghost" onClick={() => handleSkip('next')}>
-              ⏭
-            </button>
-          </div>
-          <div className={isPlaying ? 'player-visualizer active' : 'player-visualizer'} aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="player-progress">
-            <span>{formatTime(progress)}</span>
-            <input
-              type="range"
-              min={0}
-              max={duration || 0}
-              value={progress}
-              onChange={(event) => handleSeek(Number(event.target.value))}
-              style={{ accentColor: currentSongAccent }}
-            />
-            <span>{formatTime(duration || 0)}</span>
-          </div>
-        </div>
-
-        <div className="player-extra" />
       </div>
 
       <nav className="mobile-nav">
