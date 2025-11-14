@@ -69,7 +69,7 @@ const formatTime = (seconds: number) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-const navItems = ['Home', 'Search', 'Radio', 'Library']
+const navItems = ['Home', 'Search']
 
 function App() {
   const [songs, setSongs] = useState<Song[]>(FALLBACK_SONGS)
@@ -77,6 +77,8 @@ function App() {
   const [isLoadingSongs, setIsLoadingSongs] = useState(true)
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [likedSongIds, setLikedSongIds] = useState<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const autoplayRef = useRef(false)
   const [duration, setDuration] = useState(0)
@@ -93,10 +95,42 @@ function App() {
     [currentSongAccent]
   )
 
+  const displayedSongs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return songs
+    return songs.filter((song) => {
+      const titleMatch = song.title.toLowerCase().includes(query)
+      const artistMatch = song.artist.toLowerCase().includes(query)
+      return titleMatch || artistMatch
+    })
+  }, [songs, searchQuery])
+
   const trackCountLabel = useMemo(() => {
-    const count = songs.length
+    const count = displayedSongs.length
+    if (searchQuery.trim()) {
+      return count === 1 ? '1 result' : `${count} results`
+    }
     return count === 1 ? '1 song' : `${count} songs`
-  }, [songs.length])
+  }, [displayedSongs.length, searchQuery])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem('tunnoodle-liked-songs')
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[]
+        setLikedSongIds(new Set(parsed))
+      }
+    } catch (error) {
+      console.warn('Failed to restore liked songs', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const serialized = JSON.stringify(Array.from(likedSongIds))
+    window.localStorage.setItem('tunnoodle-liked-songs', serialized)
+  }, [likedSongIds])
 
   useEffect(() => {
     const loadSongs = async () => {
@@ -267,6 +301,38 @@ function App() {
     setIsPlaying(true)
   }
 
+  const handleToggleLike = (songId: string) => {
+    setLikedSongIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(songId)) {
+        next.delete(songId)
+      } else {
+        next.add(songId)
+      }
+      return next
+    })
+  }
+
+  const handleSkip = (direction: 'next' | 'prev') => {
+    const candidateList = displayedSongs.length > 0 ? displayedSongs : songs
+    if (candidateList.length === 0) return
+
+    const currentIndex = candidateList.findIndex((song) => song.id === selectedSong.id)
+    if (currentIndex === -1) {
+      handleSelectSong(candidateList[0])
+      return
+    }
+
+    const nextIndex =
+      direction === 'next'
+        ? (currentIndex + 1) % candidateList.length
+        : (currentIndex - 1 + candidateList.length) % candidateList.length
+
+    handleSelectSong(candidateList[nextIndex])
+  }
+
+  const isSongLiked = (songId: string) => likedSongIds.has(songId)
+
   return (
     <div className="spotify-page">
       <audio ref={audioRef} preload="auto" />
@@ -275,12 +341,7 @@ function App() {
         <div className="sidebar-brand">TuneNoodle</div>
         <nav className="sidebar-nav">
           {navItems.map((item, index) => (
-            <button
-              key={item}
-              type="button"
-              className={index === 0 ? 'nav-link active' : 'nav-link'}
-              disabled={index !== 0}
-            >
+            <button key={item} type="button" className={index === 0 ? 'nav-link active' : 'nav-link'}>
               {item}
             </button>
           ))}
@@ -307,9 +368,13 @@ function App() {
             </button>
           </div>
           <div className="header-search">
-            <input type="text" placeholder="Search in your library" disabled />
+            <input
+              type="search"
+              placeholder="Search songs or artists"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
           </div>
-          <div className="header-avatar">SV</div>
         </header>
 
         <section className="hero-card" style={{ background: heroGradient }}>
@@ -324,8 +389,12 @@ function App() {
               <button type="button" className="pill primary" onClick={togglePlay}>
                 {isPlaying ? 'Pause' : 'Play'}
               </button>
-              <button type="button" className="pill ghost" disabled>
-                ♡
+              <button
+                type="button"
+                className={isSongLiked(selectedSong.id) ? 'pill ghost liked' : 'pill ghost'}
+                onClick={() => handleToggleLike(selectedSong.id)}
+              >
+                {isSongLiked(selectedSong.id) ? '♥' : '♡'}
               </button>
               <button type="button" className="pill ghost" disabled>
                 ⋮
@@ -350,18 +419,28 @@ function App() {
             {!isLoadingSongs && songs.length === 0 && (
               <li className="empty-row">No songs available.</li>
             )}
+            {!isLoadingSongs && songs.length > 0 && displayedSongs.length === 0 && (
+              <li className="empty-row">No results found for "{searchQuery}".</li>
+            )}
             {!isLoadingSongs &&
-              songs.map((song, index) => {
+              displayedSongs.map((song, index) => {
                 const isCurrent = song.id === selectedSong.id
                 const displayDuration =
                   song.duration || (isCurrent ? duration : 0) || (song.duration ?? 0)
 
                 return (
                   <li key={song.id}>
-                    <button
-                      type="button"
+                    <div
                       className={isCurrent ? 'track-row active' : 'track-row'}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleSelectSong(song)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          handleSelectSong(song)
+                        }
+                      }}
                     >
                       <span className="track-index">
                         {isCurrent && isPlaying ? '▹' : String(index + 1).padStart(2, '0')}
@@ -373,10 +452,21 @@ function App() {
                         <span className="track-title">{song.title}</span>
                         <span className="track-artist">{song.artist}</span>
                       </div>
+                      <button
+                        type="button"
+                        className={isSongLiked(song.id) ? 'track-like liked' : 'track-like'}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleToggleLike(song.id)
+                        }}
+                        aria-label={isSongLiked(song.id) ? 'Unlike song' : 'Like song'}
+                      >
+                        {isSongLiked(song.id) ? '♥' : '♡'}
+                      </button>
                       <span className="track-duration">
                         {displayDuration ? formatTime(displayDuration) : '--:--'}
                       </span>
-                    </button>
+                    </div>
                   </li>
                 )
               })}
@@ -400,13 +490,13 @@ function App() {
             <button type="button" className="ghost" disabled>
               🔀
             </button>
-            <button type="button" className="ghost" disabled>
+            <button type="button" className="ghost" onClick={() => handleSkip('prev')}>
               ⏮
             </button>
             <button type="button" className="primary" onClick={togglePlay}>
               {isPlaying ? '⏸' : '▶'}
             </button>
-            <button type="button" className="ghost" disabled>
+            <button type="button" className="ghost" onClick={() => handleSkip('next')}>
               ⏭
             </button>
             <button type="button" className="ghost" disabled>
@@ -435,7 +525,7 @@ function App() {
       </div>
 
       <nav className="mobile-nav">
-        {navItems.slice(0, 3).map((item, index) => (
+        {navItems.map((item, index) => (
           <button key={item} type="button" className={index === 0 ? 'nav-link active' : 'nav-link'}>
             {item}
           </button>
