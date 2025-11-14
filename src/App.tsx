@@ -8,6 +8,7 @@ type Song = {
   duration: number
   accent: string
   src: string
+  cover?: string
 }
 
 const colorPalette = ['#1db954', '#20c997', '#64b5f6', '#f06292', '#9575cd', '#ff8a65']
@@ -19,7 +20,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Synth Lab',
     duration: 0,
     accent: '#1db954',
-    src: 'songs/aurora-echoes.wav'
+    src: 'songs/aurora-echoes.wav',
+    cover:
+      'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'sunset-drive',
@@ -27,7 +30,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Neon Nights',
     duration: 0,
     accent: '#20c997',
-    src: 'songs/sunset-drive.wav'
+    src: 'songs/sunset-drive.wav',
+    cover:
+      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'opalescent-sky',
@@ -35,7 +40,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Lumen Bloom',
     duration: 0,
     accent: '#64b5f6',
-    src: 'songs/opalescent-sky.wav'
+    src: 'songs/opalescent-sky.wav',
+    cover:
+      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'midnight-canvas',
@@ -43,7 +50,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Violet Wave',
     duration: 0,
     accent: '#9575cd',
-    src: 'songs/midnight-canvas.wav'
+    src: 'songs/midnight-canvas.wav',
+    cover:
+      'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'luminous-trails',
@@ -51,7 +60,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Mirage Bloom',
     duration: 0,
     accent: '#ff8a65',
-    src: 'songs/luminous-trails.wav'
+    src: 'songs/luminous-trails.wav',
+    cover:
+      'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=600&q=80'
   }
 ]
 
@@ -112,6 +123,11 @@ function App() {
     }
     return count === 1 ? '1 song' : `${count} songs`
   }, [displayedSongs.length, searchQuery])
+
+  const likedSongs = useMemo(
+    () => songs.filter((song) => likedSongIds.has(song.id)),
+    [songs, likedSongIds]
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -183,8 +199,9 @@ function App() {
               artist,
               duration: 0,
               accent: colorPalette[index % colorPalette.length],
-              src: url
-            }
+              src: url,
+              cover: `https://picsum.photos/seed/${encodeURIComponent(file.name)}/600/600`
+            } as Song
           })
           .filter((song): song is Song => Boolean(song))
 
@@ -346,9 +363,47 @@ function App() {
             </button>
           ))}
         </nav>
+        <div className="sidebar-search">
+          <input
+            type="search"
+            placeholder="Search songs or artists"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </div>
+        <section className="sidebar-favorites">
+          <header>
+            <h4>Favourites</h4>
+            <span>{likedSongs.length || 'No'} liked</span>
+          </header>
+          {likedSongs.length === 0 && <p className="favorites-empty">Like songs to see them here.</p>}
+          {likedSongs.length > 0 && (
+            <ul>
+              {likedSongs.map((song) => {
+                const isCurrent = song.id === selectedSong.id
+                return (
+                  <li key={song.id}>
+                    <button
+                      type="button"
+                      className={isCurrent ? 'favorite-row active' : 'favorite-row'}
+                      onClick={() => handleSelectSong(song)}
+                    >
+                      <span className="favorite-title">{song.title}</span>
+                      <span className="favorite-artist">{song.artist}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
         <div className="sidebar-mini">
           <div className="mini-cover" style={{ background: coverGradient }}>
-            ♪
+            {selectedSong.cover ? (
+              <img src={selectedSong.cover} alt={`${selectedSong.title} cover art`} />
+            ) : (
+              '♪'
+            )}
           </div>
           <div className="mini-meta">
             <span className="mini-title">{selectedSong.title}</span>
@@ -358,28 +413,13 @@ function App() {
       </aside>
 
       <main className="spotify-main">
-        <header className="spotify-header">
-          <div className="header-arrows">
-            <button type="button" className="round">
-              ←
-            </button>
-            <button type="button" className="round">
-              →
-            </button>
-          </div>
-          <div className="header-search">
-            <input
-              type="search"
-              placeholder="Search songs or artists"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </div>
-        </header>
-
         <section className="hero-card" style={{ background: heroGradient }}>
           <div className="hero-art" style={{ background: coverGradient }}>
-            ♪
+            {selectedSong.cover ? (
+              <img src={selectedSong.cover} alt={`${selectedSong.title} cover art`} />
+            ) : (
+              '♪'
+            )}
           </div>
           <div className="hero-meta">
             <span className="hero-label">Now Playing</span>
@@ -396,9 +436,6 @@ function App() {
               >
                 {isSongLiked(selectedSong.id) ? '♥' : '♡'}
               </button>
-              <button type="button" className="pill ghost" disabled>
-                ⋮
-              </button>
             </div>
           </div>
         </section>
@@ -409,9 +446,6 @@ function App() {
               <h3>All tracks</h3>
               <p>{trackCountLabel}</p>
             </div>
-            <button type="button" className="filter-pill" disabled>
-              Sort ▾
-            </button>
           </header>
 
           <ul className="track-table">
@@ -446,7 +480,11 @@ function App() {
                         {isCurrent && isPlaying ? '▹' : String(index + 1).padStart(2, '0')}
                       </span>
                       <div className="track-cover" style={{ background: song.accent }}>
-                        ♪
+                        {song.cover ? (
+                          <img src={song.cover} alt={`${song.title} cover art`} />
+                        ) : (
+                          '♪'
+                        )}
                       </div>
                       <div className="track-text">
                         <span className="track-title">{song.title}</span>
@@ -477,19 +515,28 @@ function App() {
       <div className="bottom-player">
         <div className="player-info">
           <div className="player-cover" style={{ background: coverGradient }}>
-            ♪
+            {selectedSong.cover ? (
+              <img src={selectedSong.cover} alt={`${selectedSong.title} cover art`} />
+            ) : (
+              '♪'
+            )}
           </div>
           <div className="player-meta">
             <span className="player-title">{selectedSong.title}</span>
             <span className="player-artist">{selectedSong.artist}</span>
           </div>
+          <button
+            type="button"
+            className={isSongLiked(selectedSong.id) ? 'player-like liked' : 'player-like'}
+            onClick={() => handleToggleLike(selectedSong.id)}
+            aria-label={isSongLiked(selectedSong.id) ? 'Unlike song' : 'Like song'}
+          >
+            {isSongLiked(selectedSong.id) ? '♥' : '♡'}
+          </button>
         </div>
 
         <div className="player-center">
           <div className="player-buttons">
-            <button type="button" className="ghost" disabled>
-              🔀
-            </button>
             <button type="button" className="ghost" onClick={() => handleSkip('prev')}>
               ⏮
             </button>
@@ -499,9 +546,13 @@ function App() {
             <button type="button" className="ghost" onClick={() => handleSkip('next')}>
               ⏭
             </button>
-            <button type="button" className="ghost" disabled>
-              🔁
-            </button>
+          </div>
+          <div className={isPlaying ? 'player-visualizer active' : 'player-visualizer'} aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
           </div>
           <div className="player-progress">
             <span>{formatTime(progress)}</span>
@@ -517,11 +568,7 @@ function App() {
           </div>
         </div>
 
-        <div className="player-extra">
-          <button type="button" className="ghost" disabled>
-            ☰
-          </button>
-        </div>
+        <div className="player-extra" />
       </div>
 
       <nav className="mobile-nav">
