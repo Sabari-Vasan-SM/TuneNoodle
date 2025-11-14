@@ -272,7 +272,7 @@ function App() {
       <audio ref={audioRef} preload="auto" />
 
       <aside className="spotify-sidebar">
-        <div className="sidebar-brand">SoundSphere</div>
+        <div className="sidebar-brand">TuneNoodle</div>
         <nav className="sidebar-nav">
           {navItems.map((item, index) => (
             <button
