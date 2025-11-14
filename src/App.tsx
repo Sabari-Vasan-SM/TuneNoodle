@@ -8,6 +8,7 @@ type Song = {
   duration: number
   accent: string
   src: string
+  cover?: string
 }
 
 const colorPalette = ['#1db954', '#20c997', '#64b5f6', '#f06292', '#9575cd', '#ff8a65']
@@ -19,7 +20,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Synth Lab',
     duration: 0,
     accent: '#1db954',
-    src: 'songs/aurora-echoes.wav'
+    src: 'songs/aurora-echoes.wav',
+    cover:
+      'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'sunset-drive',
@@ -27,7 +30,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Neon Nights',
     duration: 0,
     accent: '#20c997',
-    src: 'songs/sunset-drive.wav'
+    src: 'songs/sunset-drive.wav',
+    cover:
+      'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'opalescent-sky',
@@ -35,7 +40,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Lumen Bloom',
     duration: 0,
     accent: '#64b5f6',
-    src: 'songs/opalescent-sky.wav'
+    src: 'songs/opalescent-sky.wav',
+    cover:
+      'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'midnight-canvas',
@@ -43,7 +50,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Violet Wave',
     duration: 0,
     accent: '#9575cd',
-    src: 'songs/midnight-canvas.wav'
+    src: 'songs/midnight-canvas.wav',
+    cover:
+      'https://images.unsplash.com/photo-1502082553048-f009c37129b9?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'luminous-trails',
@@ -51,7 +60,9 @@ const FALLBACK_SONGS: Song[] = [
     artist: 'Mirage Bloom',
     duration: 0,
     accent: '#ff8a65',
-    src: 'songs/luminous-trails.wav'
+    src: 'songs/luminous-trails.wav',
+    cover:
+      'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?auto=format&fit=crop&w=600&q=80'
   }
 ]
 
@@ -69,7 +80,7 @@ const formatTime = (seconds: number) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-const navItems = ['Home', 'Search', 'Radio', 'Library']
+const navItems = ['Home']
 
 function App() {
   const [songs, setSongs] = useState<Song[]>(FALLBACK_SONGS)
@@ -77,9 +88,12 @@ function App() {
   const [isLoadingSongs, setIsLoadingSongs] = useState(true)
   const [isPlaying, setIsPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [likedSongIds, setLikedSongIds] = useState<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const autoplayRef = useRef(false)
   const [duration, setDuration] = useState(0)
+  const [waveOffset, setWaveOffset] = useState(0)
 
   const currentSongAccent = selectedSong.accent || '#1db954'
 
@@ -93,10 +107,47 @@ function App() {
     [currentSongAccent]
   )
 
+  const displayedSongs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return songs
+    return songs.filter((song) => {
+      const titleMatch = song.title.toLowerCase().includes(query)
+      const artistMatch = song.artist.toLowerCase().includes(query)
+      return titleMatch || artistMatch
+    })
+  }, [songs, searchQuery])
+
   const trackCountLabel = useMemo(() => {
-    const count = songs.length
+    const count = displayedSongs.length
+    if (searchQuery.trim()) {
+      return count === 1 ? '1 result' : `${count} results`
+    }
     return count === 1 ? '1 song' : `${count} songs`
-  }, [songs.length])
+  }, [displayedSongs.length, searchQuery])
+
+  const likedSongs = useMemo(
+    () => songs.filter((song) => likedSongIds.has(song.id)),
+    [songs, likedSongIds]
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = window.localStorage.getItem('tunnoodle-liked-songs')
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[]
+        setLikedSongIds(new Set(parsed))
+      }
+    } catch (error) {
+      console.warn('Failed to restore liked songs', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const serialized = JSON.stringify(Array.from(likedSongIds))
+    window.localStorage.setItem('tunnoodle-liked-songs', serialized)
+  }, [likedSongIds])
 
   useEffect(() => {
     const loadSongs = async () => {
@@ -149,8 +200,9 @@ function App() {
               artist,
               duration: 0,
               accent: colorPalette[index % colorPalette.length],
-              src: url
-            }
+              src: url,
+              cover: `https://picsum.photos/seed/${encodeURIComponent(file.name)}/600/600`
+            } as Song
           })
           .filter((song): song is Song => Boolean(song))
 
@@ -242,6 +294,48 @@ function App() {
     void audio.play()
   }, [isPlaying])
 
+  useEffect(() => {
+    if (!isPlaying) return
+    const interval = setInterval(() => {
+      setWaveOffset((prev) => prev + 0.1)
+    }, 50)
+    return () => clearInterval(interval)
+  }, [isPlaying])
+
+  const generateWavePath = (width: number, height: number, progressRatio: number) => {
+    const centerY = height / 2
+    const progressX = width * progressRatio
+    const waveLength = 24 // Consistent wave length for smooth, symmetric pattern
+    const amplitude = 7 // Consistent amplitude
+    const frequency = (2 * Math.PI) / waveLength
+    
+    // Generate smooth wavy path for filled portion with many points for smooth curves
+    const filledPath: string[] = []
+    const filledPoints = Math.max(40, Math.ceil((progressX / width) * 120))
+    
+    for (let i = 0; i <= filledPoints; i++) {
+      const x = (i / filledPoints) * progressX
+      const y = centerY + Math.sin(x * frequency + waveOffset) * amplitude
+      if (i === 0) {
+        filledPath.push(`M ${x},${y}`)
+      } else {
+        filledPath.push(`L ${x},${y}`)
+      }
+    }
+    
+    // Generate straight path for unfilled portion
+    const unfilledPath: string[] = []
+    if (progressX < width) {
+      unfilledPath.push(`M ${progressX},${centerY} L ${width},${centerY}`)
+    }
+    
+    return {
+      filled: filledPath.join(' '),
+      unfilled: unfilledPath.join(' '),
+      progressX
+    }
+  }
+
   const togglePlay = () => {
     const audio = audioRef.current
     if (!audio) return
@@ -267,27 +361,92 @@ function App() {
     setIsPlaying(true)
   }
 
+  const handleToggleLike = (songId: string) => {
+    setLikedSongIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(songId)) {
+        next.delete(songId)
+      } else {
+        next.add(songId)
+      }
+      return next
+    })
+  }
+
+  const handleSkip = (direction: 'next' | 'prev') => {
+    const candidateList = displayedSongs.length > 0 ? displayedSongs : songs
+    if (candidateList.length === 0) return
+
+    const currentIndex = candidateList.findIndex((song) => song.id === selectedSong.id)
+    if (currentIndex === -1) {
+      handleSelectSong(candidateList[0])
+      return
+    }
+
+    const nextIndex =
+      direction === 'next'
+        ? (currentIndex + 1) % candidateList.length
+        : (currentIndex - 1 + candidateList.length) % candidateList.length
+
+    handleSelectSong(candidateList[nextIndex])
+  }
+
+  const isSongLiked = (songId: string) => likedSongIds.has(songId)
+
   return (
     <div className="spotify-page">
       <audio ref={audioRef} preload="auto" />
 
       <aside className="spotify-sidebar">
-        <div className="sidebar-brand">SoundSphere</div>
+        <div className="sidebar-brand">TuneNoodle</div>
         <nav className="sidebar-nav">
           {navItems.map((item, index) => (
-            <button
-              key={item}
-              type="button"
-              className={index === 0 ? 'nav-link active' : 'nav-link'}
-              disabled={index !== 0}
-            >
+            <button key={item} type="button" className={index === 0 ? 'nav-link active' : 'nav-link'}>
               {item}
             </button>
           ))}
         </nav>
+        <div className="sidebar-search">
+          <input
+            type="search"
+            placeholder="Search songs or artists"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </div>
+        <section className="sidebar-favorites">
+          <header>
+            <h4>Favourites</h4>
+            <span>{likedSongs.length || 'No'} liked</span>
+          </header>
+          {likedSongs.length === 0 && <p className="favorites-empty">Like songs to see them here.</p>}
+          {likedSongs.length > 0 && (
+            <ul>
+              {likedSongs.map((song) => {
+                const isCurrent = song.id === selectedSong.id
+                return (
+                  <li key={song.id}>
+                    <button
+                      type="button"
+                      className={isCurrent ? 'favorite-row active' : 'favorite-row'}
+                      onClick={() => handleSelectSong(song)}
+                    >
+                      <span className="favorite-title">{song.title}</span>
+                      <span className="favorite-artist">{song.artist}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
         <div className="sidebar-mini">
           <div className="mini-cover" style={{ background: coverGradient }}>
-            ♪
+            {selectedSong.cover ? (
+              <img src={selectedSong.cover} alt={`${selectedSong.title} cover art`} />
+            ) : (
+              '♪'
+            )}
           </div>
           <div className="mini-meta">
             <span className="mini-title">{selectedSong.title}</span>
@@ -297,24 +456,13 @@ function App() {
       </aside>
 
       <main className="spotify-main">
-        <header className="spotify-header">
-          <div className="header-arrows">
-            <button type="button" className="round">
-              ←
-            </button>
-            <button type="button" className="round">
-              →
-            </button>
-          </div>
-          <div className="header-search">
-            <input type="text" placeholder="Search in your library" disabled />
-          </div>
-          <div className="header-avatar">SV</div>
-        </header>
-
         <section className="hero-card" style={{ background: heroGradient }}>
           <div className="hero-art" style={{ background: coverGradient }}>
-            ♪
+            {selectedSong.cover ? (
+              <img src={selectedSong.cover} alt={`${selectedSong.title} cover art`} />
+            ) : (
+              '♪'
+            )}
           </div>
           <div className="hero-meta">
             <span className="hero-label">Now Playing</span>
@@ -324,11 +472,12 @@ function App() {
               <button type="button" className="pill primary" onClick={togglePlay}>
                 {isPlaying ? 'Pause' : 'Play'}
               </button>
-              <button type="button" className="pill ghost" disabled>
-                ♡
-              </button>
-              <button type="button" className="pill ghost" disabled>
-                ⋮
+              <button
+                type="button"
+                className={isSongLiked(selectedSong.id) ? 'pill ghost liked' : 'pill ghost'}
+                onClick={() => handleToggleLike(selectedSong.id)}
+              >
+                {isSongLiked(selectedSong.id) ? '♥' : '♡'}
               </button>
             </div>
           </div>
@@ -340,9 +489,6 @@ function App() {
               <h3>All tracks</h3>
               <p>{trackCountLabel}</p>
             </div>
-            <button type="button" className="filter-pill" disabled>
-              Sort ▾
-            </button>
           </header>
 
           <ul className="track-table">
@@ -350,33 +496,58 @@ function App() {
             {!isLoadingSongs && songs.length === 0 && (
               <li className="empty-row">No songs available.</li>
             )}
+            {!isLoadingSongs && songs.length > 0 && displayedSongs.length === 0 && (
+              <li className="empty-row">No results found for "{searchQuery}".</li>
+            )}
             {!isLoadingSongs &&
-              songs.map((song, index) => {
+              displayedSongs.map((song, index) => {
                 const isCurrent = song.id === selectedSong.id
                 const displayDuration =
                   song.duration || (isCurrent ? duration : 0) || (song.duration ?? 0)
 
                 return (
                   <li key={song.id}>
-                    <button
-                      type="button"
+                    <div
                       className={isCurrent ? 'track-row active' : 'track-row'}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => handleSelectSong(song)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          handleSelectSong(song)
+                        }
+                      }}
                     >
                       <span className="track-index">
                         {isCurrent && isPlaying ? '▹' : String(index + 1).padStart(2, '0')}
                       </span>
                       <div className="track-cover" style={{ background: song.accent }}>
-                        ♪
+                        {song.cover ? (
+                          <img src={song.cover} alt={`${song.title} cover art`} />
+                        ) : (
+                          '♪'
+                        )}
                       </div>
                       <div className="track-text">
                         <span className="track-title">{song.title}</span>
                         <span className="track-artist">{song.artist}</span>
                       </div>
+                      <button
+                        type="button"
+                        className={isSongLiked(song.id) ? 'track-like liked' : 'track-like'}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleToggleLike(song.id)
+                        }}
+                        aria-label={isSongLiked(song.id) ? 'Unlike song' : 'Like song'}
+                      >
+                        {isSongLiked(song.id) ? '♥' : '♡'}
+                      </button>
                       <span className="track-duration">
                         {displayDuration ? formatTime(displayDuration) : '--:--'}
                       </span>
-                    </button>
+                    </div>
                   </li>
                 )
               })}
@@ -385,57 +556,91 @@ function App() {
       </main>
 
       <div className="bottom-player">
-        <div className="player-info">
-          <div className="player-cover" style={{ background: coverGradient }}>
-            ♪
+        <div className="player-top-row">
+          <div className="player-info">
+            <div className="player-meta">
+              <span className="player-title">{selectedSong.title}</span>
+              <span className="player-artist">{selectedSong.artist}</span>
+            </div>
           </div>
-          <div className="player-meta">
-            <span className="player-title">{selectedSong.title}</span>
-            <span className="player-artist">{selectedSong.artist}</span>
-          </div>
+          <button type="button" className="player-play-button" onClick={togglePlay}>
+            {isPlaying ? '⏸' : '▶'}
+          </button>
         </div>
 
-        <div className="player-center">
-          <div className="player-buttons">
-            <button type="button" className="ghost" disabled>
-              🔀
-            </button>
-            <button type="button" className="ghost" disabled>
-              ⏮
-            </button>
-            <button type="button" className="primary" onClick={togglePlay}>
-              {isPlaying ? '⏸' : '▶'}
-            </button>
-            <button type="button" className="ghost" disabled>
-              ⏭
-            </button>
-            <button type="button" className="ghost" disabled>
-              🔁
-            </button>
+        <div className="player-bottom-row">
+          <button type="button" className="player-nav-button" onClick={() => handleSkip('prev')}>
+            ⏮
+          </button>
+          <div className="wavy-progress-container">
+            <svg
+              className="wavy-progress"
+              viewBox="0 0 480 40"
+              preserveAspectRatio="none"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const x = e.clientX - rect.left
+                const percentage = x / rect.width
+                const newTime = percentage * (duration || 0)
+                handleSeek(newTime)
+              }}
+            >
+              {(() => {
+                const waveData = generateWavePath(480, 40, progress / (duration || 1))
+                return (
+                  <>
+                    {/* Filled wavy portion */}
+                    <path
+                      className="wavy-path-filled"
+                      d={waveData.filled}
+                      fill="none"
+                      stroke={currentSongAccent}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                    />
+                    {/* Unfilled straight portion */}
+                    {waveData.unfilled && (
+                      <path
+                        className="wavy-path-unfilled"
+                        d={waveData.unfilled}
+                        fill="none"
+                        stroke="rgba(255, 255, 255, 0.3)"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    )}
+                    {/* Scrubber circle */}
+                    <circle
+                      cx={waveData.progressX}
+                      cy="20"
+                      r="6"
+                      fill="#fff"
+                      className="wavy-scrubber"
+                    />
+                  </>
+                )
+              })()}
+            </svg>
           </div>
-          <div className="player-progress">
-            <span>{formatTime(progress)}</span>
-            <input
-              type="range"
-              min={0}
-              max={duration || 0}
-              value={progress}
-              onChange={(event) => handleSeek(Number(event.target.value))}
-              style={{ accentColor: currentSongAccent }}
-            />
-            <span>{formatTime(duration || 0)}</span>
-          </div>
-        </div>
-
-        <div className="player-extra">
-          <button type="button" className="ghost" disabled>
-            ☰
+          <button type="button" className="player-nav-button" onClick={() => handleSkip('next')}>
+            ⏭
+          </button>
+          <button type="button" className="player-control-button" disabled>
+            🔀
+          </button>
+          <button
+            type="button"
+            className={isSongLiked(selectedSong.id) ? 'player-like-button liked' : 'player-like-button'}
+            onClick={() => handleToggleLike(selectedSong.id)}
+            aria-label={isSongLiked(selectedSong.id) ? 'Unlike song' : 'Like song'}
+          >
+            {isSongLiked(selectedSong.id) ? '♥' : '♡'}
           </button>
         </div>
       </div>
 
       <nav className="mobile-nav">
-        {navItems.slice(0, 3).map((item, index) => (
+        {navItems.map((item, index) => (
           <button key={item} type="button" className={index === 0 ? 'nav-link active' : 'nav-link'}>
             {item}
           </button>
